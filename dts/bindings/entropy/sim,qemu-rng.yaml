@@ -1,0 +1,6 @@
+description: QEMU fake RNG
+
+compatible: "sim,qemu-rng"
+
+include: base.yaml
+
