@@ -4,10 +4,11 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#define DT_DRV_COMPAT sim_ieee802154_uart_pipe
+#define DT_DRV_COMPAT etc_ieee802154_uart_pipe
 
-#define LOG_MODULE_NAME sim_ieee802154_uart_pipe
+#define LOG_MODULE_NAME etc_ieee802154_uart_pipe
 #define LOG_LEVEL CONFIG_IEEE802154_DRIVER_LOG_LEVEL
+
 
 #include <zephyr/logging/log.h>
 LOG_MODULE_REGISTER(LOG_MODULE_NAME);
@@ -16,7 +17,6 @@ LOG_MODULE_REGISTER(LOG_MODULE_NAME);
 
 #include <zephyr/kernel.h>
 #include <zephyr/arch/cpu.h>
-#include <zephyr/debug/stack.h>
 
 #include <zephyr/device.h>
 #include <zephyr/init.h>
@@ -24,17 +24,15 @@ LOG_MODULE_REGISTER(LOG_MODULE_NAME);
 #include <zephyr/net/net_pkt.h>
 #include <zephyr/random/random.h>
 
+#include <zephyr/drivers/uart_pipe.h>
+#include <zephyr/net/ieee802154_radio.h>
+
 #if defined(CONFIG_NET_L2_OPENTHREAD)
 #include <zephyr/net/openthread.h>
 #include <zephyr/net/ieee802154_radio_openthread.h>
 #endif
 
-#include <zephyr/net/ieee802154_radio.h>
-
-#include <zephyr/drivers/uart_pipe.h>
-#include <zephyr/net/ieee802154_radio.h>
-
-#include "ieee802154_sim_uart_pipe.h"
+#include "ieee802154_etc_uart_pipe.h"
 
 #define PAN_ID_OFFSET           3 /* Pan Id offset */
 #define DEST_ADDR_OFFSET        5 /* Destination offset address*/
@@ -59,7 +57,7 @@ static uint8_t dev_ext_addr[EXTENDED_ADDRESS_SIZE]; /* Device Extended Address *
 /** Singleton device used in uart pipe callback */
 static const struct device *upipe_dev;
 
-#if defined(CONFIG_IEEE802154_SIM_UPIPE_HW_FILTER)
+#if defined(IEEE802154_ETC_UPIPE_HW_FILTER)
 
 static bool received_dest_addr_matched(uint8_t *rx_buffer)
 {
@@ -148,7 +146,7 @@ static uint8_t *upipe_rx(uint8_t *buf, size_t *off)
 			goto out;
 		}
 
-#if defined(CONFIG_IEEE802154_SIM_UPIPE_HW_FILTER)
+#if defined(CONFIG_IEEE802154_ETC_UPIPE_HW_FILTER)
 		if (received_dest_addr_matched(pkt->buffer->data) == false) {
 			LOG_DBG("Packet received is not addressed to me");
 			goto out;
@@ -182,7 +180,8 @@ done:
 
 static enum ieee802154_hw_caps upipe_get_capabilities(const struct device *dev)
 {
-	return IEEE802154_HW_FCS | IEEE802154_HW_FILTER;
+	return IEEE802154_HW_FCS | IEEE802154_HW_FILTER | IEEE802154_HW_TX_RX_ACK |
+		IEEE802154_HW_RX_TX_ACK ;
 }
 
 static int upipe_cca(const struct device *dev)
@@ -328,6 +327,31 @@ static int upipe_stop(const struct device *dev)
 	return 0;
 }
 
+static int upipe_energy_scan_start(const struct device *dev,
+				  uint16_t duration,
+				  energy_scan_done_cb_t done_cb)
+{
+	int err = 0;
+
+	ARG_UNUSED(dev);
+	return err;
+}
+
+static uint8_t upipe_get_acc(const struct device *dev)
+{
+	ARG_UNUSED(dev);
+
+	return 255;
+}
+
+static int upipe_configure(const struct device *dev,
+			  enum ieee802154_config_type type,
+			  const struct ieee802154_config *config)
+{
+	ARG_UNUSED(dev);
+	return 0;
+}
+
 /* driver-allocated attribute memory - constant across all driver instances */
 IEEE802154_DEFINE_PHY_SUPPORTED_CHANNELS(drv_attr, 11, 26);
 
@@ -364,17 +388,18 @@ static inline uint8_t *get_mac(const struct device *dev)
 	upipe->mac_addr[2] = 0x20;
 	upipe->mac_addr[3] = 0x30;
 
-#if defined(CONFIG_IEEE802154_SIM_UPIPE_RANDOM_MAC)
+#if defined(CONFIG_IEEE802154_ETC_UPIPE_RANDOM_MAC)
 	sys_rand_get(&upipe->mac_addr[4], 4U);
 #else
-	upipe->mac_addr[4] = CONFIG_IEEE802154_SIM_UPIPE_MAC4;
-	upipe->mac_addr[5] = CONFIG_IEEE802154_SIM_UPIPE_MAC5;
-	upipe->mac_addr[6] = CONFIG_IEEE802154_SIM_UPIPE_MAC6;
-	upipe->mac_addr[7] = CONFIG_IEEE802154_SIM_UPIPE_MAC7;
+	upipe->mac_addr[4] = CONFIG_IEEE802154_ETC_UPIPE_MAC4;
+	upipe->mac_addr[5] = CONFIG_IEEE802154_ETC_UPIPE_MAC5;
+	upipe->mac_addr[6] = CONFIG_IEEE802154_ETC_UPIPE_MAC6;
+	upipe->mac_addr[7] = CONFIG_IEEE802154_ETC_UPIPE_MAC7;
 #endif
 
 	return upipe->mac_addr;
 }
+
 
 static void upipe_iface_init(struct net_if *iface)
 {
@@ -387,8 +412,6 @@ static void upipe_iface_init(struct net_if *iface)
 	upipe_dev = dev;
 	upipe->iface = iface;
 
-	printk("upipe_iface_init");
-
 	ieee802154_init(iface);
 }
 
@@ -398,15 +421,22 @@ static const struct ieee802154_radio_api upipe_radio_api = {
 	.iface_api.init		= upipe_iface_init,
 
 	.get_capabilities	= upipe_get_capabilities,
-	.cca			= upipe_cca,
+	.cca			    = upipe_cca,
 	.set_channel		= upipe_set_channel,
-	.filter			= upipe_filter,
+	.filter			    = upipe_filter,
 	.set_txpower		= upipe_set_txpower,
-	.tx			= upipe_tx,
-	.start			= upipe_start,
-	.stop			= upipe_stop,
-	.attr_get		= upipe_attr_get,
+	.start			    = upipe_start,
+	.stop			    = upipe_stop,
+	.tx			        = upipe_tx,
+
+	.ed_scan            = upipe_energy_scan_start,
+	.get_sch_acc        = upipe_get_acc,
+	.configure          = upipe_configure,
+	
+	.attr_get		    = upipe_attr_get,
 };
+
+
 
 #if defined(CONFIG_NET_L2_IEEE802154)
 #define L2 IEEE802154_L2
@@ -424,13 +454,14 @@ static const struct ieee802154_radio_api upipe_radio_api = {
 
 #if defined(CONFIG_NET_L2_PHY_IEEE802154)
 NET_DEVICE_DT_INST_DEFINE(0, upipe_init, NULL, &upipe_context_data, NULL,
-			  CONFIG_KERNEL_INIT_PRIORITY_DEFAULT, &upipe_radio_api,L2,
+			  60, &upipe_radio_api,
+			  L2,
 			  L2_CTX_TYPE, MTU);
 #else
-DEVICE_DT_INST_DEFINE(0, upipe_init, NULL,
-		      &upipe_context_data, NULL, POST_KERNEL,
-		      CONFIG_KERNEL_INIT_PRIORITY_DEFAULT,
-		      &upipe_radio_api);
+DEVICE_DT_INST_DEFINE(0, upipe_init, NULL, &upipe_context_data, NULL,
+			  60, &upipe_radio_api);
 #endif
+
+
 
 

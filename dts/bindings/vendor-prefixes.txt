@@ -1,1 +1,1 @@
-sim	QEMU simulation
+etc	Electronic Theatre Controls

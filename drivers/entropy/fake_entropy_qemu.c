@@ -11,7 +11,7 @@
  * This entropy source should only be used for testing.
  */
 
-#define DT_DRV_COMPAT sim_qemu_rng
+#define DT_DRV_COMPAT zephyr_qemu_rng
 
 #include <zephyr/device.h>
 #include <zephyr/drivers/entropy.h>
